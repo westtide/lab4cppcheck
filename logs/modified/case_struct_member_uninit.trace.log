@@ -1,0 +1,6 @@
+phase=REPORT event=REPORT var=- varid=- loc=[cases/case_struct_member_uninit.cpp:8] state_before=UNKNOWN state_after=UNKNOWN reason=CheckUninitVar::uninitvarError::REPORT:report-uninitvar-valueflow
+phase=ENTRY event=ENTER var=- varid=- loc=[cases/case_struct_member_uninit.cpp:2] reason=CheckUninitVar::check::ENTRY
+phase=SCOPE event=ENTER var=- varid=- loc=[cases/case_struct_member_uninit.cpp:6] reason=CheckUninitVar::checkScope::SCOPE scope=main
+phase=VAR event=DECL var=s.a varid=2 loc=[cases/case_struct_member_uninit.cpp:7] state_before=UNINIT state_after=UNINIT reason=CheckUninitVar::checkScopeForVariable::VAR
+phase=FLOW event=READ var=s.a varid=2 loc=[cases/case_struct_member_uninit.cpp:8] state_before=UNINIT state_after=UNINIT reason=CheckUninitVar::checkScopeForVariable::READ:return-read
+phase=REPORT event=REPORT var=- varid=- loc=[cases/case_struct_member_uninit.cpp:8] state_before=UNKNOWN state_after=UNKNOWN reason=CheckUninitVar::uninitStructMemberError::REPORT:report-uninit-struct

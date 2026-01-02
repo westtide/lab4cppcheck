@@ -1,0 +1,57 @@
+# UninitVar 调试验证与效果复现日志（步骤 + 日志片段截图 + 文字说明）
+
+[Step 1] 环境搭建（阅读 readme.md 的 CMake 编译段落）
+- 命令: cmake -S . -B build
+- 观察: Boost 未找到的 CMake 警告（可选依赖，不影响 CLI 构建）
+- 命令: cmake --build build
+- 观察: build/bin/cppcheck 生成，链接提示 duplicate libraries 警告
+
+[Step 2] 极简案例选择
+- 文件: cases/case_definite_uninit.c
+- 代码:
+  int main(void) {
+      int x;
+      return x;
+  }
+- 理由: 最短路径触发“读未初始化变量”，便于验证核心流程。
+
+[Step 3] 采用日志方式调试（不使用断点）
+- 观察点/逻辑断点（等价断点位置）:
+  1) CheckUninitVar::check            (ENTRY)
+  2) CheckUninitVar::checkScope       (SCOPE)
+  3) CheckUninitVar::checkScopeForVariable (VAR/FLOW)
+  4) CheckUninitVar::uninitvarError   (REPORT)
+
+[Step 4] 运行并收集日志
+- 命令: CPPCHECK_UNINIT_TRACE=1 build/bin/cppcheck --quiet \
+        --enable=warning,style,performance,portability --inconclusive \
+        --template=gcc --output-file=logs/analysis/case_definite_uninit.out.log \
+        cases/case_definite_uninit.c 2> logs/analysis/case_definite_uninit.trace.log
+
+[Step 5] 关键日志片段（文本截图）
+- trace: logs/analysis/case_definite_uninit.trace.log
+  phase=REPORT event=REPORT ... reason=CheckUninitVar::uninitvarError::REPORT:report-uninitvar-valueflow
+  phase=ENTRY  event=ENTER  ... reason=CheckUninitVar::check::ENTRY
+  phase=SCOPE  event=ENTER  ... reason=CheckUninitVar::checkScope::SCOPE
+  phase=VAR    event=DECL   ... reason=CheckUninitVar::checkScopeForVariable::VAR
+  phase=FLOW   event=READ   ... reason=CheckUninitVar::checkScopeForVariable::READ:return-read
+
+[Step 6] 关键变量状态变化观察
+- 变量 x: state_before=UNINIT -> state_after=UNINIT（读前未赋值）
+- READ 发生在 return 处，与案例预期一致，触发 REPORT。
+
+[Step 7] 核心函数调用栈（由日志反推）
+[cppcheck]
+  -> CheckUninitVar::check
+     -> CheckUninitVar::checkScope
+        -> CheckUninitVar::checkScopeForVariable
+           -> CheckUninitVar::uninitvarError
+
+[Step 8] 效果复现（修改后 vs 修改前）
+- 修改点: CheckUninitVar::uninitvarError(const ValueFlow::Value& v)
+  逻辑: v.isKnown()==false 时直接返回，不再上报可能性路径
+- 修改前输出: logs/baseline/case_maybe_uninit_branch.out.log
+  cases/case_maybe_uninit_branch.c:7:12: warning: Uninitialized variable: x [uninitvar]
+- 修改后输出: logs/analysis/case_maybe_uninit_branch.out.log
+  (无输出)
+- 解释: 分支导致 MAYBE 的路径被视作不确定，ValueFlow 报告被抑制。

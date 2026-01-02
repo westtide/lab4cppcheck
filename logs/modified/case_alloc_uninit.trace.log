@@ -1,0 +1,7 @@
+phase=ENTRY event=ENTER var=- varid=- loc=[cases/case_alloc_uninit.c:4] reason=CheckUninitVar::check::ENTRY
+phase=SCOPE event=ENTER var=- varid=- loc=[cases/case_alloc_uninit.c:4] reason=CheckUninitVar::checkScope::SCOPE scope=main
+phase=VAR event=DECL var=p varid=1 loc=[cases/case_alloc_uninit.c:5] state_before=UNINIT state_after=UNINIT reason=CheckUninitVar::checkScopeForVariable::VAR
+phase=FLOW event=READ var=p varid=1 loc=[cases/case_alloc_uninit.c:6] state_before=UNINIT state_after=UNINIT reason=CheckUninitVar::checkScopeForVariable::READ:read-before-write
+phase=REPORT event=REPORT var=- varid=- loc=[cases/case_alloc_uninit.c:6] state_before=UNKNOWN state_after=UNKNOWN reason=CheckUninitVar::uninitdataError::REPORT:report-uninitdata
+phase=VAR event=DECL var=v varid=2 loc=[cases/case_alloc_uninit.c:6] state_before=UNINIT state_after=UNINIT reason=CheckUninitVar::checkScopeForVariable::VAR
+phase=FLOW event=ASSIGN var=v varid=2 loc=[cases/case_alloc_uninit.c:6] state_before=UNINIT state_after=INIT reason=CheckUninitVar::checkScopeForVariable::ASSIGN:assume-assign

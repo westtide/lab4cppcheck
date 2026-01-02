@@ -1,0 +1,6 @@
+cases/case_struct_member_uninit.cpp:8:14: warning: Uninitialized variable: s.a [uninitvar]
+    return s.a;
+             ^
+cases/case_struct_member_uninit.cpp:8:12: warning: Uninitialized struct member: s.a [uninitStructMember]
+    return s.a;
+           ^

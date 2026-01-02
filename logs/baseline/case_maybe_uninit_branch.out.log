@@ -1,0 +1,9 @@
+cases/case_maybe_uninit_branch.c:7:12: warning: Uninitialized variable: x [uninitvar]
+    return x;
+           ^
+cases/case_maybe_uninit_branch.c:4:14: note: Assuming condition is false
+    if (argc > 1) {
+             ^
+cases/case_maybe_uninit_branch.c:7:12: note: Uninitialized variable: x
+    return x;
+           ^

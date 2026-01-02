@@ -1,0 +1,6 @@
+cases/case_definite_uninit.c:4:12: warning: Uninitialized variable: x [uninitvar]
+    return x;
+           ^
+cases/case_definite_uninit.c:3:9: warning: Variable 'x' is not assigned a value. [unassignedVariable]
+    int x;
+        ^

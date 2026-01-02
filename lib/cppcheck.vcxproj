@@ -90,6 +90,7 @@
     <ClCompile Include="timer.cpp" />
     <ClCompile Include="token.cpp" />
     <ClCompile Include="tokenlist.cpp" />
+    <ClCompile Include="uninittrace.cpp" />
     <ClCompile Include="utils.cpp" />
     <ClCompile Include="vf_analyzers.cpp" />
     <ClCompile Include="vf_common.cpp" />
@@ -173,6 +174,7 @@
     <ClInclude Include="tokenize.h" />
     <ClInclude Include="tokenlist.h" />
     <ClInclude Include="tokenrange.h" />
+    <ClInclude Include="uninittrace.h" />
     <ClInclude Include="utils.h" />
     <ClInclude Include="valueflow.h" />
     <ClInclude Include="valueptr.h" />

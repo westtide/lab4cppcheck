@@ -1,0 +1,15 @@
+cases/case_alloc_uninit.c:6:14: warning: If memory allocation fails, then there is a possible null pointer dereference: p [nullPointerOutOfMemory]
+    int v = *p;
+             ^
+cases/case_alloc_uninit.c:5:27: note: Assuming allocation function fails
+    int *p = (int *)malloc(sizeof(int));
+                          ^
+cases/case_alloc_uninit.c:5:14: note: Assignment 'p=(int*)malloc(sizeof(int))', assigned value is 0
+    int *p = (int *)malloc(sizeof(int));
+             ^
+cases/case_alloc_uninit.c:6:14: note: Null pointer dereference
+    int v = *p;
+             ^
+cases/case_alloc_uninit.c:6:14: warning: Memory is allocated but not initialized: p [uninitdata]
+    int v = *p;
+             ^

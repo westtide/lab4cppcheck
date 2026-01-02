@@ -1,0 +1,457 @@
+diff --git a/lib/checkuninitvar.cpp b/lib/checkuninitvar.cpp
+index d27161472..45d5d6423 100644
+--- a/lib/checkuninitvar.cpp
++++ b/lib/checkuninitvar.cpp
+@@ -30,6 +30,7 @@
+ #include "token.h"
+ #include "tokenize.h"
+ #include "tokenlist.h"
++#include "uninittrace.h"
+ #include "utils.h"
+ #include "vfvalue.h"
+ 
+@@ -55,6 +56,23 @@ namespace {
+     CheckUninitVar instance;
+ }
+ 
++enum class TraceState { Uninit, Init, Maybe, Unknown };
++
++static const char *traceStateName(TraceState state)
++{
++    switch (state) {
++    case TraceState::Uninit:
++        return "UNINIT";
++    case TraceState::Init:
++        return "INIT";
++    case TraceState::Maybe:
++        return "MAYBE";
++    case TraceState::Unknown:
++    default:
++        return "UNKNOWN";
++    }
++}
++
+ //---------------------------------------------------------------------------
+ 
+ // get ast parent, skip possible address-of and casts
+@@ -114,6 +132,7 @@ bool CheckUninitVar::diag(const Token* tok)
+ void CheckUninitVar::check()
+ {
+     logChecker("CheckUninitVar::check");
++    UninitTrace::log(&mTokenizer->list, "ENTRY", "ENTER", mTokenizer->tokens(), nullptr, std::string(), "", "", "enter-check", nullptr);
+ 
+     const SymbolDatabase *symbolDatabase = mTokenizer->getSymbolDatabase();
+ 
+@@ -133,6 +152,24 @@ void CheckUninitVar::check()
+ 
+ void CheckUninitVar::checkScope(const Scope* scope, const std::set<std::string> &arrayTypeDefs)
+ {
++    std::string scopeName;
++    if (scope->function)
++        scopeName = scope->function->name();
++    else if (!scope->className.empty())
++        scopeName = scope->className;
++    else if (scope->type == ScopeType::eGlobal)
++        scopeName = "global";
++    UninitTrace::log(&mTokenizer->list,
++                     "SCOPE",
++                     "ENTER",
++                     scope->bodyStart,
++                     nullptr,
++                     std::string(),
++                     "",
++                     "",
++                     "scope-enter",
++                     scopeName.empty() ? nullptr : scopeName.c_str());
++
+     for (const Variable &var : scope->varlist) {
+         if ((mTokenizer->isCPP() && var.type() && !var.isPointer() && var.type()->needInitialization != Type::NeedInitialization::True) ||
+             var.isStatic() || var.isExtern() || var.isReference())
+@@ -401,6 +438,8 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
+ {
+     const bool suppressErrors(possibleInit && *possibleInit);  // Assume that this is a variable declaration, rather than a fundef
+     const bool printDebug = mSettings->debugwarnings;
++    const TokenList *traceTokens = &mTokenizer->list;
++    TraceState traceState = TraceState::Uninit;
+ 
+     if (possibleInit)
+         *possibleInit = false;
+@@ -410,6 +449,17 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
+     if (var.declarationId() == 0U)
+         return true;
+ 
++    UninitTrace::log(traceTokens,
++                     "VAR",
++                     "DECL",
++                     tok,
++                     &var,
++                     membervar,
++                     traceStateName(traceState),
++                     traceStateName(traceState),
++                     "start",
++                     nullptr);
++
+     for (; tok; tok = tok->next()) {
+         // End of scope..
+         if (tok->str() == "}") {
+@@ -542,12 +592,26 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
+                 tok = tok->link();
+ 
+                 if (!Token::simpleMatch(tok, "} else {")) {
+-                    if (initif || possibleInitIf) {
+-                        ++number_of_if;
+-                        if (number_of_if >= 2)
+-                            return true;
++                if (initif || possibleInitIf) {
++                    ++number_of_if;
++                    if (traceState != TraceState::Init) {
++                        const TraceState before = traceState;
++                        traceState = TraceState::Maybe;
++                        UninitTrace::log(traceTokens,
++                                         "FLOW",
++                                         "MERGE",
++                                         tok,
++                                         &var,
++                                         membervar,
++                                         traceStateName(before),
++                                         traceStateName(traceState),
++                                         "if-merge",
++                                         nullptr);
+                     }
+-                } else {
++                    if (number_of_if >= 2)
++                        return true;
++                }
++            } else {
+                     // goto the {
+                     tok = tok->tokAt(2);
+ 
+@@ -571,6 +635,20 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
+ 
+                     if (initif || initelse || possibleInitElse)
+                         ++number_of_if;
++                    if ((initif || initelse || possibleInitElse) && traceState != TraceState::Init) {
++                        const TraceState before = traceState;
++                        traceState = TraceState::Maybe;
++                        UninitTrace::log(traceTokens,
++                                         "FLOW",
++                                         "MERGE",
++                                         tok,
++                                         &var,
++                                         membervar,
++                                         traceStateName(before),
++                                         traceStateName(traceState),
++                                         "if-else-merge",
++                                         nullptr);
++                    }
+                     if (!initif && !noreturnIf)
+                         variableValue.insert(varValueIf.cbegin(), varValueIf.cend());
+                     if (!initelse && !noreturnElse)
+@@ -722,19 +800,51 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
+                 // variable is seen..
+                 if (tok->varId() == var.declarationId()) {
+                     if (!membervar.empty()) {
+-                        if (!suppressErrors && Token::Match(tok, "%name% . %name%") && tok->strAt(2) == membervar && Token::Match(tok->next()->astParent(), "%cop%|return|throw|?"))
++                        if (!suppressErrors && Token::Match(tok, "%name% . %name%") && tok->strAt(2) == membervar && Token::Match(tok->next()->astParent(), "%cop%|return|throw|?")) {
++                            UninitTrace::log(traceTokens,
++                                             "FLOW",
++                                             "READ",
++                                             tok,
++                                             &var,
++                                             membervar,
++                                             traceStateName(traceState),
++                                             traceStateName(traceState),
++                                             "return-read",
++                                             nullptr);
+                             uninitStructMemberError(tok, tok->str() + "." + membervar);
+-                        else if (tok->isCpp() && !suppressErrors && Token::Match(tok, "%name%") && Token::Match(tok->astParent(), "return|throw|?")) {
++                        } else if (tok->isCpp() && !suppressErrors && Token::Match(tok, "%name%") && Token::Match(tok->astParent(), "return|throw|?")) {
+                             if (std::any_of(tok->values().cbegin(), tok->values().cend(), [](const ValueFlow::Value& v) {
+                                 return v.isUninitValue() && !v.isInconclusive();
+-                            }))
++                            })) {
++                                UninitTrace::log(traceTokens,
++                                                 "FLOW",
++                                                 "READ",
++                                                 tok,
++                                                 &var,
++                                                 membervar,
++                                                 traceStateName(traceState),
++                                                 traceStateName(traceState),
++                                                 "return-read",
++                                                 nullptr);
+                                 uninitStructMemberError(tok, tok->str() + "." + membervar);
++                            }
+                         }
+                     }
+ 
+                     // Use variable
+-                    else if (!suppressErrors && isVariableUsage(tok, var.isPointer(), *alloc))
++                    else if (!suppressErrors && isVariableUsage(tok, var.isPointer(), *alloc)) {
++                        UninitTrace::log(traceTokens,
++                                         "FLOW",
++                                         "READ",
++                                         tok,
++                                         &var,
++                                         membervar,
++                                         traceStateName(traceState),
++                                         traceStateName(traceState),
++                                         "return-read",
++                                         nullptr);
+                         uninitvarError(tok, tok->str(), *alloc);
++                    }
+ 
+                     return true;
+                 }
+@@ -801,11 +911,33 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
+                     return true;
+ 
+                 if (isMemberVariableAssignment(tok, membervar)) {
++                    const TraceState before = traceState;
++                    traceState = TraceState::Init;
++                    UninitTrace::log(traceTokens,
++                                     "FLOW",
++                                     "ASSIGN",
++                                     tok,
++                                     &var,
++                                     membervar,
++                                     traceStateName(before),
++                                     traceStateName(traceState),
++                                     "member-assign",
++                                     nullptr);
+                     checkRhs(tok, var, *alloc, number_of_if, membervar);
+                     return true;
+                 }
+ 
+                 if (isMemberVariableUsage(tok, var.isPointer(), *alloc, membervar)) {
++                    UninitTrace::log(traceTokens,
++                                     "FLOW",
++                                     "READ",
++                                     tok,
++                                     &var,
++                                     membervar,
++                                     traceStateName(traceState),
++                                     traceStateName(traceState),
++                                     "member-read",
++                                     nullptr);
+                     uninitStructMemberError(tok, tok->str() + "." + membervar);
+                     return true;
+                 }
+@@ -819,6 +951,16 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
+             } else {
+                 // Use variable
+                 if (!suppressErrors && isVariableUsage(tok, var.isPointer(), *alloc)) {
++                    UninitTrace::log(traceTokens,
++                                     "FLOW",
++                                     "READ",
++                                     tok,
++                                     &var,
++                                     membervar,
++                                     traceStateName(traceState),
++                                     traceStateName(traceState),
++                                     "read-before-write",
++                                     nullptr);
+                     uninitvarError(tok, tok->str(), *alloc);
+                     return true;
+                 }
+@@ -828,8 +970,19 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
+                     parent = parent->astParent();
+                     if (parent->str() == "[") {
+                         if (const Token *errorToken = checkExpr(parent->astOperand2(), var, *alloc, number_of_if==0)) {
+-                            if (!suppressErrors)
++                            if (!suppressErrors) {
++                                UninitTrace::log(traceTokens,
++                                                 "FLOW",
++                                                 "READ",
++                                                 errorToken,
++                                                 &var,
++                                                 membervar,
++                                                 traceStateName(traceState),
++                                                 traceStateName(traceState),
++                                                 "expr-read",
++                                                 nullptr);
+                                 uninitvarError(errorToken, errorToken->expressionString(), *alloc);
++                            }
+                             return true;
+                         }
+                     }
+@@ -837,13 +990,38 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
+                 if (Token::simpleMatch(parent->astParent(), "=") && astIsLHS(parent)) {
+                     const Token *eq = parent->astParent();
+                     if (const Token *errorToken = checkExpr(eq->astOperand2(), var, *alloc, number_of_if==0)) {
+-                        if (!suppressErrors)
++                        if (!suppressErrors) {
++                            UninitTrace::log(traceTokens,
++                                             "FLOW",
++                                             "READ",
++                                             errorToken,
++                                             &var,
++                                             membervar,
++                                             traceStateName(traceState),
++                                             traceStateName(traceState),
++                                             "rhs-read",
++                                             nullptr);
+                             uninitvarError(errorToken, errorToken->expressionString(), *alloc);
++                        }
+                         return true;
+                     }
+                 }
+ 
+                 // assume that variable is assigned
++                {
++                    const TraceState before = traceState;
++                    traceState = TraceState::Init;
++                    UninitTrace::log(traceTokens,
++                                     "FLOW",
++                                     "ASSIGN",
++                                     tok,
++                                     &var,
++                                     membervar,
++                                     traceStateName(before),
++                                     traceStateName(traceState),
++                                     "assume-assign",
++                                     nullptr);
++                }
+                 return true;
+             }
+         }
+@@ -904,6 +1082,16 @@ bool CheckUninitVar::checkIfForWhileHead(const Token *startparentheses, const Va
+             if (const Token *errorToken = isVariableUsage(tok, var.isPointer(), alloc)) {
+                 if (suppressErrors)
+                     continue;
++                UninitTrace::log(&mTokenizer->list,
++                                 "FLOW",
++                                 "READ",
++                                 errorToken,
++                                 &var,
++                                 membervar,
++                                 traceStateName(TraceState::Unknown),
++                                 traceStateName(TraceState::Unknown),
++                                 "cond-read",
++                                 nullptr);
+                 uninitvarError(errorToken, errorToken->expressionString(), alloc);
+             }
+             return true;
+@@ -1093,6 +1281,16 @@ bool CheckUninitVar::checkLoopBody(const Token *tok, const Variable& var, const
+     const Token *errorToken = checkLoopBodyRecursive(tok, var, alloc, membervar, bailout, alwaysReturns);
+ 
+     if (!suppressErrors && !bailout && !alwaysReturns && errorToken) {
++        UninitTrace::log(&mTokenizer->list,
++                         "FLOW",
++                         "READ",
++                         errorToken,
++                         &var,
++                         membervar,
++                         traceStateName(TraceState::Unknown),
++                         traceStateName(TraceState::Unknown),
++                         "loop-read",
++                         nullptr);
+         if (membervar.empty())
+             uninitvarError(errorToken, errorToken->expressionString(), alloc);
+         else
+@@ -1111,10 +1309,31 @@ void CheckUninitVar::checkRhs(const Token *tok, const Variable &var, Alloc alloc
+         if (tok->str() == "=")
+             rhs = true;
+         else if (rhs && tok->varId() == var.declarationId()) {
+-            if (membervar.empty() && isVariableUsage(tok, var.isPointer(), alloc))
++            if (membervar.empty() && isVariableUsage(tok, var.isPointer(), alloc)) {
++                UninitTrace::log(&mTokenizer->list,
++                                 "FLOW",
++                                 "READ",
++                                 tok,
++                                 &var,
++                                 membervar,
++                                 traceStateName(TraceState::Unknown),
++                                 traceStateName(TraceState::Unknown),
++                                 "rhs-read",
++                                 nullptr);
+                 uninitvarError(tok, tok->str(), alloc);
+-            else if (!membervar.empty() && isMemberVariableUsage(tok, var.isPointer(), alloc, membervar))
++            } else if (!membervar.empty() && isMemberVariableUsage(tok, var.isPointer(), alloc, membervar)) {
++                UninitTrace::log(&mTokenizer->list,
++                                 "FLOW",
++                                 "READ",
++                                 tok,
++                                 &var,
++                                 membervar,
++                                 traceStateName(TraceState::Unknown),
++                                 traceStateName(TraceState::Unknown),
++                                 "rhs-read",
++                                 nullptr);
+                 uninitStructMemberError(tok, tok->str() + "." + membervar);
++            }
+             else if (Token::Match(tok, "%var% ="))
+                 break;
+             else if (Token::Match(tok->previous(), "[(,&]"))
+@@ -1551,6 +1770,17 @@ bool CheckUninitVar::isMemberVariableUsage(const Token *tok, bool isPointer, All
+ 
+ void CheckUninitVar::uninitdataError(const Token *tok, const std::string &varname)
+ {
++    const TokenList *traceTokens = mTokenizer ? &mTokenizer->list : nullptr;
++    UninitTrace::log(traceTokens,
++                     "REPORT",
++                     "REPORT",
++                     tok,
++                     nullptr,
++                     std::string(),
++                     traceStateName(TraceState::Unknown),
++                     traceStateName(TraceState::Unknown),
++                     "report-uninitdata",
++                     nullptr);
+     reportError(tok, Severity::error, "uninitdata", "$symbol:" + varname + "\nMemory is allocated but not initialized: $symbol", CWE_USE_OF_UNINITIALIZED_VARIABLE, Certainty::normal);
+ }
+ 
+@@ -1558,6 +1788,17 @@ void CheckUninitVar::uninitvarError(const Token *tok, const std::string &varname
+ {
+     if (diag(tok))
+         return;
++    const TokenList *traceTokens = mTokenizer ? &mTokenizer->list : nullptr;
++    UninitTrace::log(traceTokens,
++                     "REPORT",
++                     "REPORT",
++                     tok,
++                     nullptr,
++                     std::string(),
++                     traceStateName(TraceState::Unknown),
++                     traceStateName(TraceState::Unknown),
++                     "report-uninitvar",
++                     nullptr);
+     errorPath.emplace_back(tok, "");
+     reportError(std::move(errorPath),
+                 Severity::error,
+@@ -1573,6 +1814,17 @@ void CheckUninitVar::uninitvarError(const Token* tok, const ValueFlow::Value& v)
+         return;
+     if (diag(tok))
+         return;
++    const TokenList *traceTokens = mTokenizer ? &mTokenizer->list : nullptr;
++    UninitTrace::log(traceTokens,
++                     "REPORT",
++                     "REPORT",
++                     tok,
++                     nullptr,
++                     std::string(),
++                     traceStateName(TraceState::Unknown),
++                     traceStateName(TraceState::Unknown),
++                     "report-uninitvar-valueflow",
++                     nullptr);
+     const Token* ltok = tok;
+     if (tok && Token::simpleMatch(tok->astParent(), ".") && astIsRHS(tok))
+         ltok = tok->astParent();
+@@ -1606,6 +1858,17 @@ void CheckUninitVar::uninitvarError(const Token* tok, const ValueFlow::Value& v)
+ 
+ void CheckUninitVar::uninitStructMemberError(const Token *tok, const std::string &membername)
+ {
++    const TokenList *traceTokens = mTokenizer ? &mTokenizer->list : nullptr;
++    UninitTrace::log(traceTokens,
++                     "REPORT",
++                     "REPORT",
++                     tok,
++                     nullptr,
++                     std::string(),
++                     traceStateName(TraceState::Unknown),
++                     traceStateName(TraceState::Unknown),
++                     "report-uninit-struct",
++                     nullptr);
+     reportError(tok,
+                 Severity::error,
+                 "uninitStructMember",

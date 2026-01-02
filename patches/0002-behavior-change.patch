@@ -1,0 +1,13 @@
+diff --git a/lib/checkuninitvar.cpp b/lib/checkuninitvar.cpp
+index 45d5d6423..cf69bfc89 100644
+--- a/lib/checkuninitvar.cpp
++++ b/lib/checkuninitvar.cpp
+@@ -1814,6 +1814,8 @@ void CheckUninitVar::uninitvarError(const Token* tok, const ValueFlow::Value& v)
+         return;
+     if (diag(tok))
+         return;
++    if (!v.isKnown())
++        return;
+     const TokenList *traceTokens = mTokenizer ? &mTokenizer->list : nullptr;
+     UninitTrace::log(traceTokens,
+                      "REPORT",

@@ -1,0 +1,5 @@
+phase=REPORT event=REPORT var=- varid=- loc=[cases/case_definite_uninit.c:4] state_before=UNKNOWN state_after=UNKNOWN reason=CheckUninitVar::uninitvarError::REPORT:report-uninitvar-valueflow
+phase=ENTRY event=ENTER var=- varid=- loc=[cases/case_definite_uninit.c:2] reason=CheckUninitVar::check::ENTRY
+phase=SCOPE event=ENTER var=- varid=- loc=[cases/case_definite_uninit.c:2] reason=CheckUninitVar::checkScope::SCOPE scope=main
+phase=VAR event=DECL var=x varid=1 loc=[cases/case_definite_uninit.c:3] state_before=UNINIT state_after=UNINIT reason=CheckUninitVar::checkScopeForVariable::VAR
+phase=FLOW event=READ var=x varid=1 loc=[cases/case_definite_uninit.c:4] state_before=UNINIT state_after=UNINIT reason=CheckUninitVar::checkScopeForVariable::READ:return-read

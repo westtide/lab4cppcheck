@@ -1,0 +1,27 @@
+cases/case_alloc_uninit.c:6:14: warning: If memory allocation fails, then there is a possible null pointer dereference: p [nullPointerOutOfMemory]
+    int v = *p;
+             ^
+cases/case_alloc_uninit.c:5:27: note: Assuming allocation function fails
+    int *p = (int *)malloc(sizeof(int));
+                          ^
+cases/case_alloc_uninit.c:5:14: note: Assignment 'p=(int*)malloc(sizeof(int))', assigned value is 0
+    int *p = (int *)malloc(sizeof(int));
+             ^
+cases/case_alloc_uninit.c:6:14: note: Null pointer dereference
+    int v = *p;
+             ^
+cases/case_alloc_uninit.c:6:14: warning: Memory is allocated but not initialized: p [uninitdata]
+    int v = *p;
+             ^
+cases/case_definite_uninit.c:4:12: warning: Uninitialized variable: x [uninitvar]
+    return x;
+           ^
+cases/case_definite_uninit.c:3:9: warning: Variable 'x' is not assigned a value. [unassignedVariable]
+    int x;
+        ^
+cases/case_struct_member_uninit.cpp:8:14: warning: Uninitialized variable: s.a [uninitvar]
+    return s.a;
+             ^
+cases/case_struct_member_uninit.cpp:8:12: warning: Uninitialized struct member: s.a [uninitStructMember]
+    return s.a;
+           ^
